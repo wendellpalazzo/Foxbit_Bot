@@ -6,9 +6,9 @@ const Path = require('path');
 const Inert = require('inert');
 const pjson = require('./package.json');
 const config = require('./config.json');
-const Routes = require('./routes')
-const variables = require('./variables')
-
+const Routes = require('./routes');
+const variables = require('./variables');
+const notifier = require('node-notifier');
 
 //clear console
 process.stdout.write('\x1Bc');
@@ -18,22 +18,22 @@ console.log("Version:",pjson.version);
 console.log("*******************************************************");
 
 function serverstart(){
-	var server = new Hapi.Server();
-	server.connection({ port: 3000, host: 'localhost' });
+  var server = new Hapi.Server();
+  server.connection({ port: 3000, host: 'localhost' });
 
-	server.register([Inert], (err) => {
-		if (err)
+  server.register([Inert], (err) => {
+    if (err)
       console.error('Failed loading plugins');
       //process.exit(1);
 
     //config routers file in server router    
     server.route(Routes);
- 		//start server
- 		server.start(() => {
+    //start server
+    server.start(() => {
       console.log('Server running at:', server.info.uri);
-    		//open page automatic
+        //open page automatic
     		open(server.info.uri);
-    	});
+      });
   });
 }
 
@@ -43,13 +43,23 @@ var blinktrade = new BlinkTradeWS({
   currency: config.currency,
   brokerId: config.brokerId,
 });
+
 blinktrade.connect().then(function() {
-	return blinktrade.login({ username: config.key, password: config.password });   
+  return blinktrade.login({ username: config.key, password: config.password });   
 }).then(function(logged) {
-	console.log("Connected BlinkTradeWS")			
-	return blinktrade.balance().on('BALANCE', onBalanceUpdate);
+  console.log("Connected BlinkTradeWS");
+
+  setInterval(function(){
+    blinktrade.heartbeat().then(function(h){
+      console.log("HEARTBEAT");
+      console.log(h);
+    });  
+  },30000);
+  
+
+  return blinktrade.balance().on('BALANCE', onBalanceUpdate);
 }).then(function(balance) {
-	variables.infoBalanceBRL.BRL = balance.Available.BRL;
+  variables.infoBalanceBRL.BRL = balance.Available.BRL;
   variables.infoBalanceBRL.BTC = balance.Available.BTC;
   variables.ClientID = balance.ClientID;
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Balance: " + parseFloat(balance.Available.BRL / 1e8).toFixed(2)  + " BRL | " + parseFloat(balance.Available.BTC / 1e8).toFixed(6)  + " BTC@>");
@@ -65,7 +75,7 @@ blinktrade.connect().then(function() {
   return blinktrade.subscribeOrderbook(["BTCBRL"])
   .on('OB:NEW_ORDER', onOrderBookNewOrder)
   .on('OB:UPDATE_ORDER', onOrderBookUpdateOrder)
-  .on('OB:DELETE_ORDER', onOrderBookDeleteOrder)
+  .on('OB:DELETE_ORDER', onOrderBookDeleteOrder)  
   .on('OB:DELETE_ORDERS_THRU', onOrderBookDeleteThruOrder)
   .on('OB:TRADE_NEW', onOrderBookTradeNew);
 
@@ -73,35 +83,36 @@ blinktrade.connect().then(function() {
   variables.orderbooktemp = orderbook['MDFullGrp']['BTCBRL'];
   // Start Ledger
   requestLedger()
-  setInterval(requestLedger, 3000); 
+  setInterval(requestLedger, 10000); 
   // Start Open Orders
   myorders() 
-  setInterval(myorders, 2000); 
+  setInterval(myorders, 5000); 
   serverstart()
 });
 
 
 function onBalanceUpdate(newBalance) {
+  
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] Balance Updated');
   var BTC_locked = newBalance['4']['BTC_locked'];
   var BRL_locked = newBalance['4']['BRL_locked'];
   var BTC = newBalance['4']['BTC'];
   var BRL = newBalance['4']['BRL'];
   if (typeof BTC_locked !== 'undefined') {
-  	logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BTC_locked: "+BTC_locked)
-  	variables.infoBalanceBRL.BTC_locked = BTC_locked;
+    logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BTC_locked: "+BTC_locked)
+    variables.infoBalanceBRL.BTC_locked = BTC_locked;
   }
   if (typeof BRL_locked !== 'undefined') {
-  	logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BRL_locked: "+BRL_locked)
-  	variables.infoBalanceBRL.BRL_locked = BRL_locked;
+    logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BRL_locked: "+BRL_locked)
+    variables.infoBalanceBRL.BRL_locked = BRL_locked;
   }
   if (typeof BTC !== 'undefined') {
-  	logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BTC:"+BTC)
-  	variables.infoBalanceBRL.BTC =  parseFloat(BTC / 1e8);
+    logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BTC:"+BTC)
+    variables.infoBalanceBRL.BTC =  parseFloat(BTC / 1e8);
   }
   if (typeof BRL !== 'undefined') {
-  	logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BRL: "+BRL)
-  	variables.infoBalanceBRL.BRL =  parseFloat(BRL / 1e8);
+    logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] BRL: "+BRL)
+    variables.infoBalanceBRL.BRL =  parseFloat(BRL / 1e8);
   }
 }
 
@@ -115,10 +126,6 @@ function onExecutionReportNew(data) {
   logConsole("***************************************************");
 }
 function onExecutionReportPartial(data) {
-<<<<<<< HEAD
-=======
-  console.log("onExecutionReportPartial",data)
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
   logConsole("***************************************************")
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Order Partially Executed:");
   var Side = data.Side == 1 ? 'Buy' : 'Sell';
@@ -128,10 +135,6 @@ function onExecutionReportPartial(data) {
   logConsole("***************************************************");
 }
 function onExecutionReportExecution(data) {
-<<<<<<< HEAD
-=======
-  console.log("onExecutionReportExecution",data)
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
   var newvalue = data.Price
   newvalue = parseFloat(newvalue / 1e8)
   newvalue = parseFloat((newvalue * (variables.TradeLimits.PROFIT.amount/100))+newvalue)
@@ -139,15 +142,15 @@ function onExecutionReportExecution(data) {
     console.log("price",newvalue)
     console.log("amount",data.OrderQty)
     blinktrade.sendOrder({
-			"side": "2", //sell
+      "side": "2", //sell
       "price": parseInt(newvalue * 1e8),
       "amount": data.OrderQty,
       "symbol": "BTCBRL",
     }).then(function(order) {
       //save log
-			savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating PROFIT: Amount: " + data.OrderQty + " BTC | Price: ");// + valuenew + " BRL");
-  		//Inform the user
-			logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating PROFIT Order: Amount: " + data.OrderQty + " BTC | Price: ");// + valuenew + " BRL@>");
+      savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating PROFIT: Amount: " + data.OrderQty + " BTC | Price: ");// + valuenew + " BRL");
+      //Inform the user
+      logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating PROFIT Order: Amount: " + data.OrderQty + " BTC | Price: ");// + valuenew + " BRL@>");
     });
   }
   logConsole("***************************************************")
@@ -193,8 +196,8 @@ function onExecutionReportRejected(data) {
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] Order Symbol: " + data.Symbol);
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] Order Value: " + parseFloat(data.Price / 1e16).toFixed(6));
   logConsole("***************************************************");
-  	//Enable New Orders
-  	if (Side == "Buy") {
+    //Enable New Orders
+    if (Side == "Buy") {
      variables.TradeLimits.BUY.OrderID = 0;
      variables.TradeLimits.BUY.ClOrdID = 0;
    } else {
@@ -213,12 +216,7 @@ function onOrderBookNewOrder(data) {
   VerifyChanges();
 }
 function onOrderBookUpdateOrder(data) {
-<<<<<<< HEAD
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] OB:UPDATE_ORDER:'+ data.side+":"+data.index);
-=======
-  console.log("onOrderBookUpdateOrder",data)
-  logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] OB:UPDATE_ORDER: '+ data);
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
 }
 function onOrderBookDeleteOrder(data) {
   //console.log("onOrderBookDeleteOrder",data)
@@ -226,24 +224,27 @@ function onOrderBookDeleteOrder(data) {
   if (data.side == 'buy') {
     delete variables.orderbooktemp.bids[data.index-1]; 
     var todelete = [];
-    for (i = 0 ; i < variables.orderbooktemp.bids.length ;i++)
-    {
-     if (typeof variables.orderbooktemp.bids[i] == 'undefined') todelete.push(i);
+    if(parseInt(variables.orderbooktemp.bids.length) > 0){
+      for (var i = 0; i<parseInt(variables.orderbooktemp.bids.length); i++)
+      {
+        if (typeof variables.orderbooktemp.bids[i] == 'undefined') todelete.push(i);
+      }
     }
     todelete.sort(function(a, b) { return b-a });
-    for (i = 0;i < todelete.length; i ++)
+    for (var i = 0;i < todelete.length; i ++)
     {
     variables.orderbooktemp.bids.splice(todelete[i],1);
     } 
+   
   } else {
     delete variables.orderbooktemp.asks[data.index-1];
     var todelete = [];
-    for (i = 0 ; i < variables.orderbooktemp.asks.length ;i++)
+    for (var i = 0; i < variables.orderbooktemp.asks.length; i++)
     {
       if (typeof variables.orderbooktemp.asks[i] == 'undefined') todelete.push(i);
     }
     todelete.sort(function(a, b) { return b-a });
-    for (i = 0;i < todelete.length; i ++)
+    for (var i = 0; i < todelete.length; i ++)
     {
       variables.orderbooktemp.asks.splice(todelete[i],1);
     }
@@ -251,46 +252,38 @@ function onOrderBookDeleteOrder(data) {
   VerifyChanges();
 }
 function onOrderBookDeleteThruOrder(data) {
-<<<<<<< HEAD
-  //savelog(JSON.stringify(data))
+
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] OB:DELETE_ORDERS_THRU');
   if (data.side == 'buy') {
-    for (i = 0 ; i < data.index ;i++)
+    for (var i = 0; i < data.index ;i++)
     {
       delete variables.orderbooktemp.bids[i]; 
     }  
-=======
-  console.log("onOrderBookDeleteThruOrder",data)
-  logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] OB:DELETE_ORDERS_THRU');
-  if (data.side == 'buy') {
-    delete variables.orderbooktemp.bids[data.index-1]; 
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
+
+
     var todelete = [];
-    for (i = 0 ; i < variables.orderbooktemp.bids.length ;i++)
+    for (var i = 0; i < variables.orderbooktemp.bids.length; i++)
     {
      if (typeof variables.orderbooktemp.bids[i] == 'undefined') todelete.push(i);
     }
     todelete.sort(function(a, b) { return b-a });
-    for (i = 0;i < todelete.length; i ++)
+    for (var i = 0;i < todelete.length; i ++)
     {
      variables.orderbooktemp.bids.splice(todelete[i],1);
     } 
   } else {
-<<<<<<< HEAD
-    for (i = 0 ; i < data.index ;i++)
+    for (var i = 0; i < data.index ;i++)
     {
       delete variables.orderbooktemp.asks[i]; 
     }
-=======
-    delete variables.orderbooktemp.asks[data.index-1];
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
+
     var todelete = [];
-    for (i = 0 ; i < variables.orderbooktemp.asks.length ;i++)
+    for (var i = 0; i < variables.orderbooktemp.asks.length ;i++)
     {
       if (typeof variables.orderbooktemp.asks[i] == 'undefined') todelete.push(i);
     }
     todelete.sort(function(a, b) { return b-a });
-    for (i = 0;i < todelete.length; i ++)
+    for (var i = 0;i < todelete.length; i ++)
     {
       variables.orderbooktemp.asks.splice(todelete[i],1);
     }
@@ -307,11 +300,6 @@ function onOrderBookDeleteThruOrder(data) {
 }
 function onOrderBookTradeNew(data) {
   logConsole("[" + dateFormat(new Date(), "h:MM:ss") + '] OB:TRADE_NEW');
-<<<<<<< HEAD
-  //console.log("onOrderBookTradeNew",data)
-=======
-  console.log("onOrderBookTradeNew",data)
->>>>>>> 7a282233b12f4d78342b990bd0ab19d3612b93a5
 }
 
 module.exports.VerifyChangesExports =function () { 
@@ -324,10 +312,10 @@ function VerifyChanges() {
   if (variables.TradeLimits.BUY.active == true) {
     console.log("BUY.active:",variables.TradeLimits.BUY.active)
     console.log("BUY.OrderID:",variables.TradeLimits.BUY.OrderID)
-  	//Check if the last order made is different from the first order book Buy
+    //Check if the last order made is different from the first order book Buy
     console.log("BUY.Check1:",(currentidbids != variables.ClientID && parseFloat(variables.orderbooktemp['bids'][0][0]) < parseFloat(parseFloat(variables.orderbooktemp['asks'][0][0]) - 0.01)))
     if (currentidbids != variables.ClientID && parseFloat(variables.orderbooktemp['bids'][0][0]) < parseFloat(parseFloat(variables.orderbooktemp['asks'][0][0]) - 0.01)) {
-			//New value Calc
+      //New value Calc
       var valuenew = parseFloat(variables.orderbooktemp['bids'][0][0]) + 0.01;
       if (variables.TradeLimits.BUY.min > valuenew ) {
         valuenew = variables.TradeLimits.BUY.min
@@ -343,16 +331,16 @@ function VerifyChanges() {
         console.log("amount:",amount)
         //Call function to buy the order in exchange
         blinktrade.sendOrder({
-				  "side": "1", //buy
+          "side": "1", //buy
           "price": parseInt((valuenew * 1e8).toFixed(0)),
           "amount": parseInt((amount * 1e8).toFixed(0)),
           "symbol": "BTCBRL",
         }).then(function(order) {
           variables.TradeLimits.BUY.OrderID = order.OrderID;
           variables.TradeLimits.BUY.ClOrdID = order.ClOrdID ;
-      		//save log
+          //save log
           savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Purchase: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  				//Inform the user
+          //Inform the user
           logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Purchase Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
         });
         return
@@ -368,16 +356,16 @@ function VerifyChanges() {
           console.log("amount:",amount)
           //Call function to buy the order in exchange
           blinktrade.sendOrder({
-				    "side": "1", //buy
+            "side": "1", //buy
             "price": parseInt((valuenew * 1e8).toFixed(0)),
             "amount": parseInt((amount * 1e8).toFixed(0)),
             "symbol": "BTCBRL",
           }).then(function(order) {
             variables.TradeLimits.BUY.OrderID = order.OrderID;
             variables.TradeLimits.BUY.ClOrdID = order.ClOrdID ;
-      		  //save log
+            //save log
             savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Purchase: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  				  //Inform the user
+            //Inform the user
             logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Purchase Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
           });
         });
@@ -394,16 +382,16 @@ function VerifyChanges() {
         variables.Oldorder.bids = valuenew;
         //Call function to buy the order in exchange
         blinktrade.sendOrder({
-				  "side": "1", //buy
+          "side": "1", //buy
           "price": parseInt((valuenew * 1e8).toFixed(0)),
           "amount": parseInt((amount * 1e8).toFixed(0)),
           "symbol": "BTCBRL",
         }).then(function(order) {
           variables.TradeLimits.BUY.OrderID = order.OrderID;
           variables.TradeLimits.BUY.ClOrdID = order.ClOrdID ;
-      		//save log
+          //save log
           savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Purchase: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  				//Inform the user
+          //Inform the user
           logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Purchase Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
         });
       });
@@ -433,7 +421,7 @@ function VerifyChanges() {
         variables.Oldorder.asks = valuenew;
         //Call function to buy the order in exchange
         blinktrade.sendOrder({
-				  "side": "2", //sell
+          "side": "2", //sell
           "price": parseInt((valuenew * 1e8).toFixed(0)),
           "amount": parseInt((amount * 1e8).toFixed(0)),
           "symbol": "BTCBRL",
@@ -442,7 +430,7 @@ function VerifyChanges() {
           variables.TradeLimits.SELL.ClOrdID = order.ClOrdID ;
           //save log
           savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Sale: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  		    //Inform the user
+          //Inform the user
           logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Sale Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
         });
       return
@@ -455,16 +443,16 @@ function VerifyChanges() {
         variables.Oldorder.asks = valuenew;
         //Call function to SELL the order in exchange
         blinktrade.sendOrder({
-				  "side": "2", //sell
+          "side": "2", //sell
           "price": parseInt((valuenew * 1e8).toFixed(0)),
           "amount": parseInt((amount * 1e8).toFixed(0)),
           "symbol": "BTCBRL",
         }).then(function(order) {
           variables.TradeLimits.SELL.OrderID = order.OrderID;
           variables.TradeLimits.SELL.ClOrdID = order.ClOrdID ;
-      	 //save log
+         //save log
           savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Sale: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  			 //Inform the user
+         //Inform the user
           logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Sale Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
         });
       });
@@ -479,16 +467,16 @@ function VerifyChanges() {
       variables.Oldorder.asks = valuenew;
       //Call function to sell the order in exchange
       blinktrade.sendOrder({
-				"side": "2", //sell
+        "side": "2", //sell
         "price": parseInt((valuenew * 1e8).toFixed(0)),
         "amount": parseInt((amount * 1e8).toFixed(0)),
         "symbol": "BTCBRL",
       }).then(function(order) {
         variables.TradeLimits.SELL.OrderID = order.OrderID;
         variables.TradeLimits.SELL.ClOrdID = order.ClOrdID ;
-      	//save log
+        //save log
         savelog("[" + dateFormat(new Date(), "h:MM:ss") + "] Foxbit Creating Sale: Amount: " + amount + " BTC | Price: " + valuenew + " BRL");
-  			//Inform the user
+        //Inform the user
         logConsole("[" + dateFormat(new Date(), "h:MM:ss") + "] <@Foxbit Creating Sale Order: Amount: " + amount + " BTC | Price: " + valuenew + " BRL@>");
       });
     });
@@ -546,27 +534,27 @@ function myorders() {
 //String repeat protection
 var lastLog;
 function logConsole(str) {
-	if (lastLog != str) {
-		lastLog = str;
-		//change color replace
-		str = str.replace('[', '\x1b[93m['); //Yellow color
-		str = str.replace(']', ']\x1b[0m');  //Reset color
-		str = str.replace('<@', '\x1b[92m'); //Green color
-		str = str.replace('@>', '\x1b[0m');  //Reset color
-		str = str.replace('<#', '\x1b[91m'); //Green color
-		str = str.replace('#>', '\x1b[0m');  //Reset color
-		console.log(str);
-	}
+  if (lastLog != str) {
+    lastLog = str;
+    //change color replace
+    str = str.replace('[', '\x1b[93m['); //Yellow color
+    str = str.replace(']', ']\x1b[0m');  //Reset color
+    str = str.replace('<@', '\x1b[92m'); //Green color
+    str = str.replace('@>', '\x1b[0m');  //Reset color
+    str = str.replace('<#', '\x1b[91m'); //Green color
+    str = str.replace('#>', '\x1b[0m');  //Reset color
+    console.log(str);
+  }
 }
 
 //Save logs in file log.txt
 function savelog(str) {
-	var fs = require('fs');
-	fs.appendFile('log.txt', str + "\n", function (err) {
+  var fs = require('fs');
+  fs.appendFile('log.txt', str + "\n", function (err) {
    if (err) {
       // append failed
     } else {
-    	// done
+      // done
     }
   });
 }

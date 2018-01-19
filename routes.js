@@ -100,7 +100,7 @@ module.exports = [
           variables.TradeLimits.BUY.amount = 0;
           index.VerifyChangesExports();
       }
-    const response = reply('You Post buy to Hapi')
+      const response = reply('Ativou o profit');    
     response.header('Content-Type', 'text/plain')
   }
 },

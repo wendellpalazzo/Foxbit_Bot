@@ -7,13 +7,13 @@ Using API  [Blinktrade](https://blinktrade.com/docs/#trade-api).
 
 ## Running Locally
 
-Make sure you have [Node.js](http://nodejs.org/) installed.
+Make sure you have [Node.js](http://nodejs.org/) installed (v8.9.3) and Npm (5.5.1) too!
 
 ```sh
-$ git clone https://github.com/rafaelwdornelas/Foxbit_Bot.git # or clone your own fork
+$ git clone https://github.com/wendellpalazzo/Foxbit_Bot # or clone your own fork
 $ cd Foxbit_Bot
 $ npm install
-$ npm start
+$ NODE_ENV=production node index.js
 ```
 
 Your app should now be running on [localhost:3000](http://localhost:3000/).
